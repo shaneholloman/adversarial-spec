@@ -603,7 +603,7 @@ def call_codex_model(
     user_message: str,
     model: str,
     reasoning_effort: str = DEFAULT_CODEX_REASONING,
-    timeout: int = 300,
+    timeout: int = 600,
     search: bool = False
 ) -> tuple[str, int, int]:
     """
@@ -614,7 +614,7 @@ def call_codex_model(
         user_message: User prompt to send
         model: Model name (e.g., "codex/gpt-5.2-codex" -> uses "gpt-5.2-codex")
         reasoning_effort: Thinking level (minimal, low, medium, high, xhigh). Default: xhigh
-        timeout: Timeout in seconds (default 5 minutes)
+        timeout: Timeout in seconds (default 10 minutes)
         search: Enable web search capability for Codex
 
     Returns:
@@ -709,7 +709,8 @@ def call_single_model(
     context: Optional[str] = None,
     preserve_intent: bool = False,
     codex_reasoning: str = DEFAULT_CODEX_REASONING,
-    codex_search: bool = False
+    codex_search: bool = False,
+    timeout: int = 600
 ) -> ModelResponse:
     """Send spec to a single model and return response with retry on failure."""
     system_prompt = get_system_prompt(doc_type, persona)
@@ -745,6 +746,7 @@ def call_single_model(
                     user_message=user_message,
                     model=model,
                     reasoning_effort=codex_reasoning,
+                    timeout=timeout,
                     search=codex_search
                 )
                 agreed = "[AGREE]" in content
@@ -786,7 +788,8 @@ def call_single_model(
                     {"role": "user", "content": user_message}
                 ],
                 temperature=0.7,
-                max_tokens=8000
+                max_tokens=8000,
+                timeout=timeout
             )
             content = response.choices[0].message.content
             agreed = "[AGREE]" in content
@@ -832,14 +835,15 @@ def call_models_parallel(
     context: Optional[str] = None,
     preserve_intent: bool = False,
     codex_reasoning: str = DEFAULT_CODEX_REASONING,
-    codex_search: bool = False
+    codex_search: bool = False,
+    timeout: int = 600
 ) -> list[ModelResponse]:
     """Call multiple models in parallel and collect responses."""
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(models)) as executor:
         future_to_model = {
             executor.submit(
-                call_single_model, model, spec, round_num, doc_type, press, focus, persona, context, preserve_intent, codex_reasoning, codex_search
+                call_single_model, model, spec, round_num, doc_type, press, focus, persona, context, preserve_intent, codex_reasoning, codex_search, timeout
             ): model
             for model in models
         }
@@ -1138,6 +1142,8 @@ Document types:
                         help="Resume a previous session by ID")
     parser.add_argument("--codex-search", action="store_true",
                         help="Enable web search for Codex CLI models")
+    parser.add_argument("--timeout", type=int, default=600,
+                        help="Timeout in seconds for model API/CLI calls (default: 600 = 10 minutes)")
     args = parser.parse_args()
 
     # Handle simple info commands
@@ -1330,7 +1336,7 @@ Document types:
     results = call_models_parallel(
         models, spec, args.round, args.doc_type, args.press,
         args.focus, args.persona, context, args.preserve_intent,
-        args.codex_reasoning, args.codex_search
+        args.codex_reasoning, args.codex_search, args.timeout
     )
 
     errors = [r for r in results if r.error]
