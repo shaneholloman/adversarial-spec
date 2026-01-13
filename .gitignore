@@ -10,3 +10,11 @@ venv/
 .DS_Store
 *.swp
 *.swo
+.coverage
+.mutmut-cache
+*.bak
+htmlcov/
+html/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

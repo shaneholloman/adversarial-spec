@@ -40,6 +40,11 @@ All notable changes to this project will be documented in this file.
 
 ### Technical
 
-- Modular codebase: debate.py, models.py, providers.py, session.py, prompts.py
-- Unit tests with pytest (65 tests)
-- CI workflow with linting (ruff), tests, and manifest validation
+- Modular codebase: debate.py, models.py, providers.py, session.py, prompts.py, telegram_bot.py
+- Full type hints with py.typed marker
+- Google-style docstrings
+- Input validation for security-sensitive operations
+- Structured logging for exception handling
+- Unit tests with pytest (194 tests, 91% coverage)
+- CI workflow with linting (ruff), type checking (mypy), tests with coverage threshold
+- Pre-commit hooks for code quality

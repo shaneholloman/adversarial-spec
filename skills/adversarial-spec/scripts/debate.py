@@ -47,7 +47,7 @@ import argparse
 import json
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 os.environ["LITELLM_LOG"] = "ERROR"
 
@@ -88,7 +88,17 @@ from models import (
 def send_telegram_notification(
     models: list[str], round_num: int, results: list[ModelResponse], poll_timeout: int
 ) -> Optional[str]:
-    """Send Telegram notification with all model responses and poll for feedback."""
+    """Send Telegram notification with all model responses and poll for feedback.
+
+    Args:
+        models: List of model identifiers used.
+        round_num: Current round number.
+        results: List of model responses.
+        poll_timeout: Seconds to wait for user reply.
+
+    Returns:
+        User feedback text if received, None otherwise.
+    """
     try:
         script_dir = Path(__file__).parent
         sys.path.insert(0, str(script_dir))
@@ -154,7 +164,17 @@ Cost: ${cost_tracker.total_cost:.4f}
 def send_final_spec_to_telegram(
     spec: str, rounds: int, models: list[str], doc_type: str
 ) -> bool:
-    """Send the final converged spec to Telegram."""
+    """Send the final converged spec to Telegram.
+
+    Args:
+        spec: The final spec content.
+        rounds: Number of rounds completed.
+        models: List of model identifiers used.
+        doc_type: Document type (prd or tech).
+
+    Returns:
+        True on success, False on failure.
+    """
     try:
         script_dir = Path(__file__).parent
         sys.path.insert(0, str(script_dir))
@@ -190,7 +210,12 @@ Final document:
         return False
 
 
-def main():
+def create_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser.
+
+    Returns:
+        Configured ArgumentParser instance.
+    """
     parser = argparse.ArgumentParser(
         description="Adversarial spec debate with multiple LLMs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -341,24 +366,33 @@ Document types:
         nargs="?",
         help="Additional argument for bedrock subcommands (model name or alias target)",
     )
-    args = parser.parse_args()
+    return parser
 
-    # Handle simple info commands
+
+def handle_info_command(args: argparse.Namespace) -> bool:
+    """Handle info commands (providers, focus-areas, personas, profiles, sessions).
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        True if command was handled, False otherwise.
+    """
     if args.action == "providers":
         list_providers()
-        return
+        return True
 
     if args.action == "focus-areas":
         list_focus_areas()
-        return
+        return True
 
     if args.action == "personas":
         list_personas()
-        return
+        return True
 
     if args.action == "profiles":
         list_profiles()
-        return
+        return True
 
     if args.action == "sessions":
         sessions = SessionState.list_sessions()
@@ -375,14 +409,24 @@ Document types:
                     f"    updated: {s['updated_at'][:19] if s['updated_at'] else 'unknown'}"
                 )
                 print()
-        return
+        return True
 
+    return False
+
+
+def handle_utility_command(args: argparse.Namespace) -> bool:
+    """Handle utility commands (bedrock, save-profile, diff).
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        True if command was handled, False otherwise.
+    """
     if args.action == "bedrock":
-        subcommand = args.profile_name
-        if not subcommand:
-            subcommand = "status"
+        subcommand = args.profile_name or "status"
         handle_bedrock_command(subcommand, args.bedrock_arg, args.region)
-        return
+        return True
 
     if args.action == "save-profile":
         if not args.profile_name:
@@ -397,7 +441,7 @@ Document types:
             "preserve_intent": args.preserve_intent,
         }
         save_profile(args.profile_name, config)
-        return
+        return True
 
     if args.action == "diff":
         if not args.previous or not args.current:
@@ -411,135 +455,187 @@ Document types:
                 print(diff)
             else:
                 print("No differences found.")
-        except Exception as e:
+        except OSError as e:
             print(f"Error reading files: {e}", file=sys.stderr)
             sys.exit(1)
+        return True
+
+    return False
+
+
+def apply_profile(args: argparse.Namespace) -> None:
+    """Apply profile settings to args if --profile specified.
+
+    Args:
+        args: Parsed command-line arguments (modified in place).
+    """
+    if not args.profile:
         return
 
-    # Load profile if specified
-    if args.profile:
-        profile = load_profile(args.profile)
-        if "models" in profile and args.models == "gpt-4o":
-            args.models = profile["models"]
-        if "doc_type" in profile and args.doc_type == "tech":
-            args.doc_type = profile["doc_type"]
-        if "focus" in profile and not args.focus:
-            args.focus = profile["focus"]
-        if "persona" in profile and not args.persona:
-            args.persona = profile["persona"]
-        if "context" in profile and not args.context:
-            args.context = profile["context"]
-        if profile.get("preserve_intent") and not args.preserve_intent:
-            args.preserve_intent = profile["preserve_intent"]
+    profile = load_profile(args.profile)
+    if "models" in profile and args.models == "gpt-4o":
+        args.models = profile["models"]
+    if "doc_type" in profile and args.doc_type == "tech":
+        args.doc_type = profile["doc_type"]
+    if "focus" in profile and not args.focus:
+        args.focus = profile["focus"]
+    if "persona" in profile and not args.persona:
+        args.persona = profile["persona"]
+    if "context" in profile and not args.context:
+        args.context = profile["context"]
+    if profile.get("preserve_intent") and not args.preserve_intent:
+        args.preserve_intent = profile["preserve_intent"]
 
-    # Parse models list
+
+def parse_models(args: argparse.Namespace) -> list[str]:
+    """Parse and validate models list from args.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        List of model identifiers.
+    """
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     if not models:
         print("Error: No models specified", file=sys.stderr)
         sys.exit(1)
+    return models
 
-    # Load context files
-    context = load_context_files(args.context) if args.context else None
 
-    # Check Bedrock mode and validate/resolve models
+def setup_bedrock(
+    args: argparse.Namespace, models: list[str]
+) -> tuple[list[str], bool, Optional[str]]:
+    """Configure Bedrock mode and validate models.
+
+    Args:
+        args: Parsed command-line arguments.
+        models: List of model identifiers.
+
+    Returns:
+        Tuple of (validated_models, bedrock_mode, bedrock_region).
+    """
     bedrock_config = get_bedrock_config()
     bedrock_mode = bedrock_config.get("enabled", False)
     bedrock_region = bedrock_config.get("region")
 
-    if bedrock_mode and args.action == "critique":
-        available = bedrock_config.get("available_models", [])
-        if not available:
-            print(
-                "Error: Bedrock mode is enabled but no models are configured.",
-                file=sys.stderr,
-            )
-            print(
-                "Add models with: python3 debate.py bedrock add-model claude-3-sonnet",
-                file=sys.stderr,
-            )
-            print(
-                "Or disable Bedrock: python3 debate.py bedrock disable", file=sys.stderr
-            )
-            sys.exit(2)
+    if not bedrock_mode or args.action != "critique":
+        return models, bedrock_mode, bedrock_region
 
-        valid_models, invalid_models = validate_bedrock_models(models, bedrock_config)
-
-        if invalid_models:
-            print(
-                "Error: The following models are not available in your Bedrock configuration:",
-                file=sys.stderr,
-            )
-            for m in invalid_models:
-                print(f"  - {m}", file=sys.stderr)
-            print(f"\nAvailable models: {', '.join(available)}", file=sys.stderr)
-            print(
-                "Add models with: python3 debate.py bedrock add-model <model>",
-                file=sys.stderr,
-            )
-            print(
-                "Or disable Bedrock: python3 debate.py bedrock disable", file=sys.stderr
-            )
-            sys.exit(2)
-
-        models = valid_models
+    available = bedrock_config.get("available_models", [])
+    if not available:
         print(
-            f"Bedrock mode: routing through AWS Bedrock ({bedrock_region})",
+            "Error: Bedrock mode is enabled but no models are configured.",
             file=sys.stderr,
         )
+        print(
+            "Add models with: python3 debate.py bedrock add-model claude-3-sonnet",
+            file=sys.stderr,
+        )
+        print("Or disable Bedrock: python3 debate.py bedrock disable", file=sys.stderr)
+        sys.exit(2)
 
-    if args.action == "send-final":
-        spec = sys.stdin.read().strip()
-        if not spec:
-            print("Error: No spec provided via stdin", file=sys.stderr)
-            sys.exit(1)
-        if send_final_spec_to_telegram(spec, args.rounds, models, args.doc_type):
-            print("Final document sent to Telegram.")
+    valid_models, invalid_models = validate_bedrock_models(models, bedrock_config)
+
+    if invalid_models:
+        print(
+            "Error: The following models are not available in your Bedrock configuration:",
+            file=sys.stderr,
+        )
+        for m in invalid_models:
+            print(f"  - {m}", file=sys.stderr)
+        print(f"\nAvailable models: {', '.join(available)}", file=sys.stderr)
+        print(
+            "Add models with: python3 debate.py bedrock add-model <model>",
+            file=sys.stderr,
+        )
+        print("Or disable Bedrock: python3 debate.py bedrock disable", file=sys.stderr)
+        sys.exit(2)
+
+    print(
+        f"Bedrock mode: routing through AWS Bedrock ({bedrock_region})",
+        file=sys.stderr,
+    )
+    return valid_models, bedrock_mode, bedrock_region
+
+
+def handle_send_final(args: argparse.Namespace, models: list[str]) -> None:
+    """Handle send-final action.
+
+    Args:
+        args: Parsed command-line arguments.
+        models: List of model identifiers.
+    """
+    spec = sys.stdin.read().strip()
+    if not spec:
+        print("Error: No spec provided via stdin", file=sys.stderr)
+        sys.exit(1)
+    if send_final_spec_to_telegram(spec, args.rounds, models, args.doc_type):
+        print("Final document sent to Telegram.")
+    else:
+        print("Failed to send final document to Telegram.", file=sys.stderr)
+        sys.exit(1)
+
+
+def handle_export_tasks(args: argparse.Namespace, models: list[str]) -> None:
+    """Handle export-tasks action.
+
+    Args:
+        args: Parsed command-line arguments.
+        models: List of model identifiers.
+    """
+    spec = sys.stdin.read().strip()
+    if not spec:
+        print("Error: No spec provided via stdin", file=sys.stderr)
+        sys.exit(1)
+
+    doc_type_name = get_doc_type_name(args.doc_type)
+    prompt = EXPORT_TASKS_PROMPT.format(doc_type_name=doc_type_name, spec=spec)
+
+    try:
+        response = completion(
+            model=models[0],
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=8000,
+        )
+        content = response.choices[0].message.content
+        tasks = extract_tasks(content)
+
+        if args.json:
+            print(json.dumps({"tasks": tasks}, indent=2))
         else:
-            print("Failed to send final document to Telegram.", file=sys.stderr)
-            sys.exit(1)
-        return
-
-    if args.action == "export-tasks":
-        spec = sys.stdin.read().strip()
-        if not spec:
-            print("Error: No spec provided via stdin", file=sys.stderr)
-            sys.exit(1)
-
-        doc_type_name = get_doc_type_name(args.doc_type)
-        prompt = EXPORT_TASKS_PROMPT.format(doc_type_name=doc_type_name, spec=spec)
-
-        try:
-            response = completion(
-                model=models[0],
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=8000,
-            )
-            content = response.choices[0].message.content
-            tasks = extract_tasks(content)
-
-            if args.json:
-                print(json.dumps({"tasks": tasks}, indent=2))
-            else:
-                print(f"\n=== Extracted {len(tasks)} Tasks ===\n")
-                for i, task in enumerate(tasks, 1):
+            print(f"\n=== Extracted {len(tasks)} Tasks ===\n")
+            for i, task in enumerate(tasks, 1):
+                print(
+                    f"{i}. [{task.get('type', 'task')}] [{task.get('priority', 'medium')}] {task.get('title', 'Untitled')}"
+                )
+                if task.get("description"):
+                    print(f"   {task['description'][:100]}...")
+                if task.get("acceptance_criteria"):
                     print(
-                        f"{i}. [{task.get('type', 'task')}] [{task.get('priority', 'medium')}] {task.get('title', 'Untitled')}"
+                        f"   Acceptance criteria: {len(task['acceptance_criteria'])} items"
                     )
-                    if task.get("description"):
-                        print(f"   {task['description'][:100]}...")
-                    if task.get("acceptance_criteria"):
-                        print(
-                            f"   Acceptance criteria: {len(task['acceptance_criteria'])} items"
-                        )
-                    print()
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
-        return
+                print()
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    # Handle resume
+
+def load_or_resume_session(
+    args: argparse.Namespace, models: list[str]
+) -> tuple[str, Optional[SessionState], list[str]]:
+    """Load session from resume or stdin, optionally creating new session.
+
+    Args:
+        args: Parsed command-line arguments.
+        models: List of model identifiers.
+
+    Returns:
+        Tuple of (spec, session_state, models).
+    """
     session_state = None
+
     if args.resume:
         try:
             session_state = SessionState.load(args.resume)
@@ -567,7 +663,6 @@ Document types:
             print("Error: No spec provided via stdin", file=sys.stderr)
             sys.exit(1)
 
-    # Initialize session if --session provided
     if args.session and not session_state:
         session_state = SessionState(
             session_id=args.session,
@@ -583,6 +678,29 @@ Document types:
         session_state.save()
         print(f"Session '{args.session}' created", file=sys.stderr)
 
+    return spec, session_state, models
+
+
+def run_critique(
+    args: argparse.Namespace,
+    spec: str,
+    models: list[str],
+    session_state: Optional[SessionState],
+    context: Optional[str],
+    bedrock_mode: bool,
+    bedrock_region: Optional[str],
+) -> None:
+    """Execute the critique workflow and output results.
+
+    Args:
+        args: Parsed command-line arguments.
+        spec: The specification to critique.
+        models: List of model identifiers.
+        session_state: Optional session state for persistence.
+        context: Optional context string.
+        bedrock_mode: Whether Bedrock mode is enabled.
+        bedrock_region: AWS region for Bedrock.
+    """
     mode = "pressing for confirmation" if args.press else "critiquing"
     focus_info = f" (focus: {args.focus})" if args.focus else ""
     persona_info = f" (persona: {args.persona})" if args.persona else ""
@@ -611,25 +729,25 @@ Document types:
     )
 
     errors = [r for r in results if r.error]
-    for e in errors:
-        print(f"Warning: {e.model} returned error: {e.error}", file=sys.stderr)
+    for err_result in errors:
+        print(
+            f"Warning: {err_result.model} returned error: {err_result.error}",
+            file=sys.stderr,
+        )
 
     successful = [r for r in results if not r.error]
     all_agreed = all(r.agreed for r in successful) if successful else False
 
-    # Save checkpoint after each round
     session_id = session_state.session_id if session_state else args.session
     if session_id or args.session:
         save_checkpoint(spec, args.round, session_id)
 
-    # Get the latest spec from results
     latest_spec = spec
     for r in successful:
         if r.spec:
             latest_spec = r.spec
             break
 
-    # Update session state
     if session_state:
         session_state.spec = latest_spec
         session_state.round = args.round + 1
@@ -653,8 +771,29 @@ Document types:
         if user_feedback:
             print(f"Received feedback: {user_feedback}", file=sys.stderr)
 
+    output_results(args, results, models, all_agreed, user_feedback, session_state)
+
+
+def output_results(
+    args: argparse.Namespace,
+    results: list[ModelResponse],
+    models: list[str],
+    all_agreed: bool,
+    user_feedback: Optional[str],
+    session_state: Optional[SessionState],
+) -> None:
+    """Output critique results in JSON or text format.
+
+    Args:
+        args: Parsed command-line arguments.
+        results: List of model responses.
+        models: List of model identifiers.
+        all_agreed: Whether all models agreed.
+        user_feedback: Optional user feedback from Telegram.
+        session_state: Optional session state.
+    """
     if args.json:
-        output = {
+        output: dict[str, Any] = {
             "all_agreed": all_agreed,
             "round": args.round,
             "doc_type": args.doc_type,
@@ -703,6 +842,7 @@ Document types:
         if all_agreed:
             print("=== ALL MODELS AGREE ===")
         else:
+            successful = [r for r in results if not r.error]
             agreed_models = [r.model for r in successful if r.agreed]
             disagreed_models = [r.model for r in successful if not r.agreed]
             if agreed_models:
@@ -715,8 +855,38 @@ Document types:
             print("=== User Feedback ===")
             print(user_feedback)
 
-        if args.show_cost or True:
+        if args.show_cost:
             print(cost_tracker.summary())
+
+
+def main() -> None:
+    """Entry point for the debate CLI."""
+    parser = create_parser()
+    args = parser.parse_args()
+
+    if handle_info_command(args):
+        return
+
+    if handle_utility_command(args):
+        return
+
+    apply_profile(args)
+    models = parse_models(args)
+    context = load_context_files(args.context) if args.context else None
+    models, bedrock_mode, bedrock_region = setup_bedrock(args, models)
+
+    if args.action == "send-final":
+        handle_send_final(args, models)
+        return
+
+    if args.action == "export-tasks":
+        handle_export_tasks(args, models)
+        return
+
+    spec, session_state, models = load_or_resume_session(args, models)
+    run_critique(
+        args, spec, models, session_state, context, bedrock_mode, bedrock_region
+    )
 
 
 if __name__ == "__main__":

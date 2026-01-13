@@ -22,31 +22,49 @@ import sys
 import json
 import time
 import argparse
-from typing import Optional
+from typing import Any, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
 
-TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
-MAX_MESSAGE_LENGTH = 4096
+TELEGRAM_API: str = "https://api.telegram.org/bot{token}/{method}"
+MAX_MESSAGE_LENGTH: int = 4096
 
 
 def get_config() -> tuple[str, str]:
-    """Get bot token and chat ID from environment."""
+    """Get bot token and chat ID from environment.
+
+    Returns:
+        Tuple of (token, chat_id). Empty strings if not set.
+    """
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     return token, chat_id
 
 
-def api_call(token: str, method: str, params: Optional[dict] = None) -> dict:
-    """Make Telegram Bot API call."""
+def api_call(
+    token: str, method: str, params: Optional[dict[str, Any]] = None
+) -> dict[str, Any]:
+    """Make Telegram Bot API call.
+
+    Args:
+        token: Bot API token.
+        method: API method name (e.g., sendMessage, getUpdates).
+        params: Optional query parameters.
+
+    Returns:
+        Parsed JSON response from Telegram API.
+
+    Raises:
+        RuntimeError: On HTTP or network errors.
+    """
     url = TELEGRAM_API.format(token=token, method=method)
     if params:
         url += "?" + urlencode(params)
 
     try:
         req = Request(url, headers={"User-Agent": "adversarial-spec/1.0"})
-        with urlopen(req, timeout=30) as response:
+        with urlopen(req, timeout=30) as response:  # noqa: S310
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as e:
         body = e.read().decode("utf-8")
@@ -56,7 +74,16 @@ def api_call(token: str, method: str, params: Optional[dict] = None) -> dict:
 
 
 def send_message(token: str, chat_id: str, text: str) -> bool:
-    """Send a single message. Returns True on success."""
+    """Send a single message.
+
+    Args:
+        token: Bot API token.
+        chat_id: Target chat identifier.
+        text: Message text (supports Markdown).
+
+    Returns:
+        True on success, False on failure.
+    """
     result = api_call(
         token,
         "sendMessage",
@@ -66,7 +93,15 @@ def send_message(token: str, chat_id: str, text: str) -> bool:
 
 
 def split_message(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> list[str]:
-    """Split long message into chunks, preferring paragraph boundaries."""
+    """Split long message into chunks, preferring paragraph boundaries.
+
+    Args:
+        text: The message text to split.
+        max_length: Maximum length per chunk.
+
+    Returns:
+        List of message chunks.
+    """
     if len(text) <= max_length:
         return [text]
 
@@ -97,7 +132,16 @@ def split_message(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> list[str]:
 
 
 def send_long_message(token: str, chat_id: str, text: str) -> bool:
-    """Send message, splitting if necessary. Returns True if all chunks sent."""
+    """Send message, splitting if necessary.
+
+    Args:
+        token: Bot API token.
+        chat_id: Target chat identifier.
+        text: Message text (may exceed 4096 chars).
+
+    Returns:
+        True if all chunks sent successfully.
+    """
     chunks = split_message(text)
     for i, chunk in enumerate(chunks):
         if len(chunks) > 1:
@@ -111,7 +155,14 @@ def send_long_message(token: str, chat_id: str, text: str) -> bool:
 
 
 def get_last_update_id(token: str) -> int:
-    """Get the ID of the most recent update."""
+    """Get the ID of the most recent update.
+
+    Args:
+        token: Bot API token.
+
+    Returns:
+        The update_id of the most recent update, or 0 if none.
+    """
     result = api_call(token, "getUpdates", {"limit": 1, "offset": -1})
     updates = result.get("result", [])
     if updates:
@@ -122,9 +173,16 @@ def get_last_update_id(token: str) -> int:
 def poll_for_reply(
     token: str, chat_id: str, timeout: int = 60, after_update_id: int = 0
 ) -> Optional[str]:
-    """
-    Poll for a reply from the specified chat.
-    Returns message text if received within timeout, None otherwise.
+    """Poll for a reply from the specified chat.
+
+    Args:
+        token: Bot API token.
+        chat_id: Chat to poll for replies from.
+        timeout: Maximum seconds to wait.
+        after_update_id: Only consider updates after this ID.
+
+    Returns:
+        Message text if received within timeout, None otherwise.
     """
     start_time = time.time()
     offset = after_update_id + 1 if after_update_id else None
@@ -161,7 +219,13 @@ def poll_for_reply(
 
 
 def discover_chat_id(token: str) -> None:
-    """Poll for messages and print chat IDs."""
+    """Poll for messages and print chat IDs.
+
+    Args:
+        token: Bot API token.
+
+    Runs until interrupted with Ctrl+C.
+    """
     print("Waiting for messages... Send any message to your bot.")
     print("Press Ctrl+C to stop.\n")
 
@@ -197,8 +261,12 @@ def discover_chat_id(token: str) -> None:
         print("\nDone.")
 
 
-def cmd_setup(args):
-    """Print setup instructions and discover chat ID."""
+def cmd_setup(args: argparse.Namespace) -> None:
+    """Print setup instructions and discover chat ID.
+
+    Args:
+        args: Parsed command-line arguments.
+    """
     token, chat_id = get_config()
 
     print("=" * 50)
@@ -241,8 +309,12 @@ def cmd_setup(args):
         sys.exit(1)
 
 
-def cmd_send(args):
-    """Send message from stdin."""
+def cmd_send(args: argparse.Namespace) -> None:
+    """Send message from stdin.
+
+    Args:
+        args: Parsed command-line arguments.
+    """
     token, chat_id = get_config()
     if not token or not chat_id:
         print(
@@ -263,8 +335,12 @@ def cmd_send(args):
         sys.exit(1)
 
 
-def cmd_poll(args):
-    """Poll for reply."""
+def cmd_poll(args: argparse.Namespace) -> None:
+    """Poll for reply.
+
+    Args:
+        args: Parsed command-line arguments (includes timeout).
+    """
     token, chat_id = get_config()
     if not token or not chat_id:
         print(
@@ -284,8 +360,12 @@ def cmd_poll(args):
         sys.exit(1)
 
 
-def cmd_notify(args):
-    """Send round notification and poll for feedback."""
+def cmd_notify(args: argparse.Namespace) -> None:
+    """Send round notification and poll for feedback.
+
+    Args:
+        args: Parsed command-line arguments (includes timeout).
+    """
     token, chat_id = get_config()
     if not token or not chat_id:
         print(
@@ -319,7 +399,8 @@ def cmd_notify(args):
     print(json.dumps(result))
 
 
-def main():
+def main() -> None:
+    """Entry point for the telegram_bot CLI."""
     parser = argparse.ArgumentParser(
         description="Telegram bot utilities for adversarial spec development",
         formatter_class=argparse.RawDescriptionHelpFormatter,

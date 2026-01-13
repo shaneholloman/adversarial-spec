@@ -26,6 +26,22 @@ jobs:
       - name: Run ruff format check
         run: ruff format --check skills/adversarial-spec/scripts/
 
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install mypy litellm types-requests
+
+      - name: Run mypy
+        run: mypy --explicit-package-bases skills/adversarial-spec/scripts/*.py --ignore-missing-imports --no-error-summary
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -38,11 +54,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pytest litellm
+          pip install pytest pytest-cov litellm
 
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: skills/adversarial-spec/scripts
-        run: python -m pytest tests/ -v
+        run: python -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=90
 
   validate-manifests:
     runs-on: ubuntu-latest
