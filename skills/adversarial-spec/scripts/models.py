@@ -1,15 +1,17 @@
 """Model calling, cost tracking, and response handling."""
 
-import os
-import sys
-import json
-import time
-import subprocess
-import difflib
-import concurrent.futures
-from pathlib import Path
-from dataclasses import dataclass, field
+from __future__ import annotations
+
 from typing import Optional
+import concurrent.futures
+import difflib
+import json
+import os
+import subprocess
+import sys
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
 
 os.environ["LITELLM_LOG"] = "ERROR"
 
@@ -28,16 +30,16 @@ except ImportError:
 from prompts import (
     FOCUS_AREAS,
     PRESERVE_INTENT_PROMPT,
-    REVIEW_PROMPT_TEMPLATE,
     PRESS_PROMPT_TEMPLATE,
-    get_system_prompt,
+    REVIEW_PROMPT_TEMPLATE,
     get_doc_type_name,
+    get_system_prompt,
 )
 from providers import (
-    MODEL_COSTS,
-    DEFAULT_COST,
     CODEX_AVAILABLE,
     DEFAULT_CODEX_REASONING,
+    DEFAULT_COST,
+    MODEL_COSTS,
 )
 
 MAX_RETRIES = 3
@@ -149,7 +151,7 @@ def extract_tasks(response: str) -> list[dict]:
             continue
         task_text = part.split("[/TASK]")[0].strip()
         task: dict[str, str | list[str]] = {}
-        current_key: str | None = None
+        current_key: Optional[str] = None
         current_value: list[str] = []
 
         for line in task_text.split("\n"):

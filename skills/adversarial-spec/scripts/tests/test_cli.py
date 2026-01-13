@@ -1,11 +1,11 @@
 """Tests for CLI argument parsing and command routing."""
 
-import sys
 import json
+import sys
 import tempfile
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
-from io import StringIO
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -122,11 +122,15 @@ class TestCLISaveProfile:
 
 
 class TestCLICritique:
+    @patch("debate.validate_models_before_run")
     @patch("debate.call_models_parallel")
-    def test_critique_with_json_output(self, mock_call):
+    def test_critique_with_json_output(self, mock_call, mock_validate):
         """Test critique command with JSON output."""
         import debate
         from models import ModelResponse
+
+        # Mock validation to not check API keys in tests
+        mock_validate.return_value = None
 
         mock_call.return_value = [
             ModelResponse(
@@ -155,11 +159,15 @@ class TestCLICritique:
                         assert len(data["results"]) == 1
                         assert data["results"][0]["model"] == "gpt-4o"
 
+    @patch("debate.validate_models_before_run")
     @patch("debate.call_models_parallel")
-    def test_critique_with_all_agree(self, mock_call):
+    def test_critique_with_all_agree(self, mock_call, mock_validate):
         """Test critique when all models agree."""
         import debate
         from models import ModelResponse
+
+        # Mock validation to not check API keys in tests
+        mock_validate.return_value = None
 
         mock_call.return_value = [
             ModelResponse(
@@ -201,11 +209,15 @@ class TestCLICritique:
                         data = json.loads(output)
                         assert data["all_agreed"] is True
 
+    @patch("debate.validate_models_before_run")
     @patch("debate.call_models_parallel")
-    def test_critique_passes_options(self, mock_call):
+    def test_critique_passes_options(self, mock_call, mock_validate):
         """Test that CLI options are passed to model calls."""
         import debate
         from models import ModelResponse
+
+        # Mock validation to not check API keys in tests
+        mock_validate.return_value = None
 
         mock_call.return_value = [
             ModelResponse(
@@ -301,7 +313,7 @@ class TestCreateParser:
 
         parser = debate.create_parser()
         args = parser.parse_args(["critique"])
-        assert args.models == "gpt-4o"
+        assert args.models is None  # Now dynamically detected based on API keys
         assert args.doc_type == "tech"
         assert args.round == 1
         assert args.timeout == 600

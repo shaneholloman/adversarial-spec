@@ -2,16 +2,16 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from models import (
-    call_single_model,
-    call_models_parallel,
     CostTracker,
     ModelResponse,
+    call_models_parallel,
+    call_single_model,
 )
 
 

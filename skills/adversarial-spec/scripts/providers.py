@@ -1,11 +1,13 @@
 """Provider configuration, Bedrock support, and profile management."""
 
-import os
-import sys
-import json
-import shutil
-from pathlib import Path
+from __future__ import annotations
+
 from typing import Optional
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
 
 from prompts import FOCUS_AREAS, PERSONAS
 
@@ -331,6 +333,123 @@ def list_personas():
         print(f"  {name}")
         print(f"    {description[:80]}...")
         print()
+
+
+def get_available_providers() -> list[tuple[str, Optional[str], str]]:
+    """
+    Get list of providers with configured API keys.
+
+    Returns:
+        List of (provider_name, env_var, default_model) tuples for providers with API keys set.
+        Note: env_var can be None for providers like Codex CLI that use alternative auth.
+    """
+    providers = [
+        ("OpenAI", "OPENAI_API_KEY", "gpt-4o"),
+        ("Anthropic", "ANTHROPIC_API_KEY", "claude-sonnet-4-20250514"),
+        ("Google", "GEMINI_API_KEY", "gemini/gemini-2.0-flash"),
+        ("xAI", "XAI_API_KEY", "xai/grok-3"),
+        ("Mistral", "MISTRAL_API_KEY", "mistral/mistral-large"),
+        ("Groq", "GROQ_API_KEY", "groq/llama-3.3-70b-versatile"),
+        ("Deepseek", "DEEPSEEK_API_KEY", "deepseek/deepseek-chat"),
+        ("Zhipu", "ZHIPUAI_API_KEY", "zhipu/glm-4"),
+    ]
+
+    available = []
+    for name, key, model in providers:
+        if os.environ.get(key):
+            available.append((name, key, model))
+
+    # Add Codex CLI if available
+    if CODEX_AVAILABLE:
+        available.append(("Codex CLI", None, "codex/gpt-5.2-codex"))
+
+    return available
+
+
+def get_default_model() -> Optional[str]:
+    """
+    Get a default model based on available API keys.
+
+    Checks Bedrock first, then API keys in priority order.
+
+    Returns:
+        Model name string, or None if no API keys are configured.
+    """
+    # Check Bedrock first
+    bedrock_config = get_bedrock_config()
+    if bedrock_config.get("enabled"):
+        available_models = bedrock_config.get("available_models", [])
+        if available_models:
+            return available_models[0]
+
+    # Check API keys
+    available = get_available_providers()
+    if available:
+        return available[0][2]  # Return default model from first available provider
+
+    return None
+
+
+def validate_model_credentials(models: list[str]) -> tuple[list[str], list[str]]:
+    """
+    Validate that API keys are available for requested models.
+
+    Args:
+        models: List of model identifiers.
+
+    Returns:
+        Tuple of (valid_models, invalid_models) where invalid_models lack credentials.
+    """
+    bedrock_config = get_bedrock_config()
+
+    # If Bedrock is enabled, validate against Bedrock models
+    if bedrock_config.get("enabled"):
+        return validate_bedrock_models(models, bedrock_config)
+
+    valid = []
+    invalid = []
+
+    provider_map = {
+        "gpt-": "OPENAI_API_KEY",
+        "o1": "OPENAI_API_KEY",
+        "claude-": "ANTHROPIC_API_KEY",
+        "gemini/": "GEMINI_API_KEY",
+        "xai/": "XAI_API_KEY",
+        "mistral/": "MISTRAL_API_KEY",
+        "groq/": "GROQ_API_KEY",
+        "deepseek/": "DEEPSEEK_API_KEY",
+        "zhipu/": "ZHIPUAI_API_KEY",
+        "codex/": None,  # Uses ChatGPT subscription, not API key
+    }
+
+    for model in models:
+        # Check if it's a Codex model
+        if model.startswith("codex/"):
+            if CODEX_AVAILABLE:
+                valid.append(model)
+            else:
+                invalid.append(model)
+            continue
+
+        # Find matching provider
+        required_key = None
+        for prefix, key in provider_map.items():
+            if model.startswith(prefix):
+                required_key = key
+                break
+
+        # If no provider match found, assume it needs validation later
+        if required_key is None:
+            valid.append(model)
+            continue
+
+        # Check if API key is set
+        if os.environ.get(required_key):
+            valid.append(model)
+        else:
+            invalid.append(model)
+
+    return valid, invalid
 
 
 def handle_bedrock_command(subcommand: str, arg: Optional[str], region: Optional[str]):

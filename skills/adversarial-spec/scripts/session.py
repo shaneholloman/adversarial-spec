@@ -1,11 +1,13 @@
 """Session state management and checkpointing for adversarial spec debates."""
 
-import sys
-import json
-from pathlib import Path
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from __future__ import annotations
+
 from typing import Optional
+import json
+import sys
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from pathlib import Path
 
 SESSIONS_DIR = Path.home() / ".config" / "adversarial-spec" / "sessions"
 CHECKPOINTS_DIR = Path.cwd() / ".adversarial-spec-checkpoints"
@@ -32,12 +34,16 @@ class SessionState:
         SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
         self.updated_at = datetime.now().isoformat()
         path = SESSIONS_DIR / f"{self.session_id}.json"
+        if not path.resolve().is_relative_to(SESSIONS_DIR.resolve()):
+            raise ValueError(f"Invalid session ID: {self.session_id}")
         path.write_text(json.dumps(asdict(self), indent=2))
 
     @classmethod
     def load(cls, session_id: str) -> "SessionState":
         """Load session state from disk."""
         path = SESSIONS_DIR / f"{session_id}.json"
+        if not path.resolve().is_relative_to(SESSIONS_DIR.resolve()):
+            raise ValueError(f"Invalid session ID: {session_id}")
         if not path.exists():
             raise FileNotFoundError(f"Session '{session_id}' not found")
         data = json.loads(path.read_text())
@@ -70,5 +76,7 @@ def save_checkpoint(spec: str, round_num: int, session_id: Optional[str] = None)
     CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
     prefix = f"{session_id}-" if session_id else ""
     path = CHECKPOINTS_DIR / f"{prefix}round-{round_num}.md"
+    if not path.resolve().is_relative_to(CHECKPOINTS_DIR.resolve()):
+        raise ValueError(f"Invalid session ID: {session_id}")
     path.write_text(spec)
     print(f"Checkpoint saved: {path}", file=sys.stderr)

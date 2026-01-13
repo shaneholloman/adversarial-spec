@@ -1,7 +1,7 @@
 """Tests for providers module."""
 
-import sys
 import json
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -10,16 +10,16 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from providers import (
-    MODEL_COSTS,
-    DEFAULT_COST,
     BEDROCK_MODEL_MAP,
-    load_global_config,
-    save_global_config,
+    DEFAULT_COST,
+    MODEL_COSTS,
     is_bedrock_enabled,
-    resolve_bedrock_model,
-    validate_bedrock_models,
+    load_global_config,
     load_profile,
+    resolve_bedrock_model,
+    save_global_config,
     save_profile,
+    validate_bedrock_models,
 )
 
 
@@ -566,7 +566,6 @@ class TestHandleBedrockCommand:
 
     def test_enable_requires_region(self):
         import pytest
-
         from providers import handle_bedrock_command
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -594,7 +593,6 @@ class TestHandleBedrockCommand:
 
     def test_add_model_requires_arg(self):
         import pytest
-
         from providers import handle_bedrock_command
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -626,7 +624,6 @@ class TestHandleBedrockCommand:
 
     def test_remove_model_requires_arg(self):
         import pytest
-
         from providers import handle_bedrock_command
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -639,7 +636,6 @@ class TestHandleBedrockCommand:
 
     def test_remove_model_not_in_list(self):
         import pytest
-
         from providers import handle_bedrock_command
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -654,7 +650,6 @@ class TestHandleBedrockCommand:
 
     def test_alias_requires_arg(self):
         import pytest
-
         from providers import handle_bedrock_command
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -667,7 +662,6 @@ class TestHandleBedrockCommand:
 
     def test_alias_requires_two_args(self):
         import pytest
-
         from providers import handle_bedrock_command
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -691,9 +685,129 @@ class TestHandleBedrockCommand:
 
     def test_unknown_subcommand(self):
         import pytest
-
         from providers import handle_bedrock_command
 
         with pytest.raises(SystemExit) as exc_info:
             handle_bedrock_command("unknown", None, None)
         assert exc_info.value.code == 1
+
+class TestGetAvailableProviders:
+    def test_returns_providers_with_keys_set(self):
+        from providers import get_available_providers
+
+        with patch.dict("os.environ", {
+            "OPENAI_API_KEY": "test-key",
+            "ANTHROPIC_API_KEY": "test-key",
+        }, clear=False):
+            available = get_available_providers()
+            provider_names = [name for name, _, _ in available]
+            assert "OpenAI" in provider_names
+            assert "Anthropic" in provider_names
+
+    def test_excludes_providers_without_keys(self):
+        from providers import get_available_providers
+
+        with patch.dict("os.environ", {
+            "OPENAI_API_KEY": "test-key",
+        }, clear=True):
+            available = get_available_providers()
+            provider_names = [name for name, _, _ in available]
+            assert "OpenAI" in provider_names
+            assert "Anthropic" not in provider_names
+
+    def test_returns_default_models(self):
+        from providers import get_available_providers
+
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}, clear=False):
+            available = get_available_providers()
+            for name, key, model in available:
+                if name == "OpenAI":
+                    assert model == "gpt-4o"
+
+
+class TestGetDefaultModel:
+    def test_returns_first_available_model(self):
+        from providers import get_default_model
+
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}, clear=True):
+            default = get_default_model()
+            assert default == "gemini/gemini-2.0-flash"
+
+    def test_returns_none_when_no_keys(self):
+        from providers import get_default_model
+
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("providers.CODEX_AVAILABLE", False):
+                default = get_default_model()
+                assert default is None
+
+    def test_prefers_bedrock_when_enabled(self):
+        from providers import get_default_model
+
+        with patch("providers.get_bedrock_config") as mock_config:
+            mock_config.return_value = {
+                "enabled": True,
+                "available_models": ["claude-3-sonnet", "claude-3-haiku"],
+            }
+            with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}, clear=False):
+                default = get_default_model()
+                assert default == "claude-3-sonnet"
+
+
+class TestValidateModelCredentials:
+    def test_validates_openai_models(self):
+        from providers import validate_model_credentials
+
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}, clear=True):
+            valid, invalid = validate_model_credentials(["gpt-4o", "gpt-4-turbo"])
+            assert valid == ["gpt-4o", "gpt-4-turbo"]
+            assert invalid == []
+
+    def test_detects_missing_keys(self):
+        from providers import validate_model_credentials
+
+        with patch.dict("os.environ", {}, clear=True):
+            valid, invalid = validate_model_credentials(["gpt-4o"])
+            assert valid == []
+            assert invalid == ["gpt-4o"]
+
+    def test_validates_mixed_providers(self):
+        from providers import validate_model_credentials
+
+        with patch.dict("os.environ", {
+            "OPENAI_API_KEY": "test-key",
+            "XAI_API_KEY": "test-key",
+        }, clear=True):
+            valid, invalid = validate_model_credentials([
+                "gpt-4o",
+                "xai/grok-3",
+                "gemini/gemini-2.0-flash"
+            ])
+            assert "gpt-4o" in valid
+            assert "xai/grok-3" in valid
+            assert "gemini/gemini-2.0-flash" in invalid
+
+    def test_validates_codex_availability(self):
+        from providers import validate_model_credentials
+
+        with patch("providers.CODEX_AVAILABLE", True):
+            valid, invalid = validate_model_credentials(["codex/gpt-5.2-codex"])
+            assert valid == ["codex/gpt-5.2-codex"]
+            assert invalid == []
+
+        with patch("providers.CODEX_AVAILABLE", False):
+            valid, invalid = validate_model_credentials(["codex/gpt-5.2-codex"])
+            assert valid == []
+            assert invalid == ["codex/gpt-5.2-codex"]
+
+    def test_defers_to_bedrock_validation_when_enabled(self):
+        from providers import validate_model_credentials
+
+        with patch("providers.get_bedrock_config") as mock_config:
+            mock_config.return_value = {"enabled": True, "available_models": []}
+            with patch("providers.validate_bedrock_models") as mock_validate:
+                mock_validate.return_value = (["model1"], ["model2"])
+                valid, invalid = validate_model_credentials(["model1", "model2"])
+                assert valid == ["model1"]
+                assert invalid == ["model2"]
+                mock_validate.assert_called_once()

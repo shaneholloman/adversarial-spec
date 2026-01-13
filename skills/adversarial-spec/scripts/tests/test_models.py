@@ -8,19 +8,19 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from models import (
-    ModelResponse,
+    MAX_RETRIES,
+    RETRY_BASE_DELAY,
     CostTracker,
+    ModelResponse,
+    call_codex_model,
+    call_models_parallel,
+    call_single_model,
     detect_agreement,
     extract_spec,
     extract_tasks,
-    get_critique_summary,
     generate_diff,
+    get_critique_summary,
     load_context_files,
-    call_codex_model,
-    call_single_model,
-    call_models_parallel,
-    MAX_RETRIES,
-    RETRY_BASE_DELAY,
 )
 
 
@@ -588,8 +588,9 @@ class TestCallCodexModel:
     @patch("models.CODEX_AVAILABLE", True)
     @patch("models.subprocess.run")
     def test_timeout_raises_runtime_error(self, mock_run):
-        import pytest
         import subprocess
+
+        import pytest
 
         mock_run.side_effect = subprocess.TimeoutExpired("codex", 600)
         with pytest.raises(RuntimeError, match="timed out"):

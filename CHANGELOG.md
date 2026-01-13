@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Replaced hardcoded `gpt-4o` default model with dynamic detection based on available API keys
+- Added pre-flight validation to check that models have required API keys before running critique
+- Added clear error messages when API keys are missing, showing which key is needed for each model
+- Fixed model selection to prioritize available providers in order: Bedrock, OpenAI, Anthropic, Google, xAI, etc.
+- Added documentation for resolving Claude Code auth conflicts (claude.ai token vs ANTHROPIC_API_KEY)
+- Updated documentation to include Anthropic provider in supported models table
+
+### Changed
+
+- `--models` argument now auto-detects default model from available API keys instead of assuming `gpt-4o`
+- Script now fails fast with helpful error messages if no API keys are configured
+- Profile loading now correctly handles the new dynamic default model selection
+
+### Added
+
+- New `get_available_providers()` function to detect configured API keys
+- New `get_default_model()` function to select appropriate default based on available keys
+- New `validate_model_credentials()` function to pre-validate model API key requirements
+- Comprehensive test coverage for new validation functions (11 new tests, 297 total)
+
 ## [1.0.0] - 2025-01-11
 
 ### Added

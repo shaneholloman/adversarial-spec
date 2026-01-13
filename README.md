@@ -60,6 +60,7 @@ You describe product --> Claude drafts spec --> Multiple LLMs critique in parall
 | Provider  | Env Var              | Example Models                               |
 |-----------|----------------------|----------------------------------------------|
 | OpenAI    | `OPENAI_API_KEY`     | `gpt-4o`, `gpt-4-turbo`, `o1`                |
+| Anthropic | `ANTHROPIC_API_KEY`  | `claude-sonnet-4-20250514`, `claude-opus-4-20250514` |
 | Google    | `GEMINI_API_KEY`     | `gemini/gemini-2.0-flash`, `gemini/gemini-pro` |
 | xAI       | `XAI_API_KEY`        | `xai/grok-3`, `xai/grok-beta`                |
 | Mistral   | `MISTRAL_API_KEY`    | `mistral/mistral-large`, `mistral/codestral` |
@@ -449,7 +450,7 @@ debate.py bedrock list-models                 # List built-in model mappings
 ```
 
 **Options:**
-- `--models, -m` - Comma-separated model list
+- `--models, -m` - Comma-separated model list (auto-detects from available API keys if not specified)
 - `--doc-type, -d` - prd or tech
 - `--focus, -f` - Focus area (security, scalability, performance, ux, reliability, cost)
 - `--persona` - Professional persona

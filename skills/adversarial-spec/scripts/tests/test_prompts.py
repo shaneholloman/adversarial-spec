@@ -7,14 +7,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from prompts import (
-    get_system_prompt,
-    get_doc_type_name,
+    EXPORT_TASKS_PROMPT,
     FOCUS_AREAS,
     PERSONAS,
     PRESERVE_INTENT_PROMPT,
-    REVIEW_PROMPT_TEMPLATE,
     PRESS_PROMPT_TEMPLATE,
-    EXPORT_TASKS_PROMPT,
+    REVIEW_PROMPT_TEMPLATE,
+    get_doc_type_name,
+    get_system_prompt,
 )
 
 

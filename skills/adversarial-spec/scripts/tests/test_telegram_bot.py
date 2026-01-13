@@ -8,14 +8,14 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from telegram_bot import (
+    MAX_MESSAGE_LENGTH,
+    api_call,
     get_config,
-    split_message,
-    send_message,
-    send_long_message,
     get_last_update_id,
     poll_for_reply,
-    api_call,
-    MAX_MESSAGE_LENGTH,
+    send_long_message,
+    send_message,
+    split_message,
 )
 
 

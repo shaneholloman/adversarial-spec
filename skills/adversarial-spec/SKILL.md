@@ -36,6 +36,29 @@ Generate and refine specifications through iterative debate with multiple LLMs u
 
 Run `python3 ~/.claude/skills/adversarial-spec/scripts/debate.py providers` to see which keys are set.
 
+## Troubleshooting Auth Conflicts
+
+If you see an error about "Both a token (claude.ai) and an API key (ANTHROPIC_API_KEY) are set":
+
+This conflict occurs when:
+- Claude Code is logged in with `claude /login` (uses claude.ai token)
+- AND you have `ANTHROPIC_API_KEY` set in your environment
+
+**Resolution:**
+1. **To use claude.ai token**: Remove or unset `ANTHROPIC_API_KEY` from your environment
+   ```bash
+   unset ANTHROPIC_API_KEY
+   # Or remove from ~/.bashrc, ~/.zshrc, etc.
+   ```
+
+2. **To use API key**: Sign out of claude.ai
+   ```bash
+   claude /logout
+   # Say "No" to the API key approval if prompted before login
+   ```
+
+The adversarial-spec plugin works with either authentication method. Choose whichever fits your workflow.
+
 ## AWS Bedrock Support
 
 For enterprise users who need to route all model calls through AWS Bedrock (e.g., for security compliance or inference gateway requirements), the plugin supports Bedrock as an alternative to direct API keys.
@@ -283,6 +306,10 @@ Then present available models to the user using AskUserQuestion with multiSelect
 **If OPENAI_API_KEY is set, include:**
 - `gpt-4o` - Fast, good for general critique
 - `o1` - Stronger reasoning, slower
+
+**If ANTHROPIC_API_KEY is set, include:**
+- `claude-sonnet-4-20250514` - Claude 3.5 Sonnet v2, excellent reasoning
+- `claude-opus-4-20250514` - Claude 3 Opus, highest capability
 
 **If GEMINI_API_KEY is set, include:**
 - `gemini/gemini-2.0-flash` - Fast, good balance
@@ -823,7 +850,7 @@ python3 debate.py send-final --models MODEL_LIST --doc-type TYPE --rounds N < sp
 ```
 
 **Critique options:**
-- `--models, -m` - Comma-separated model list (default: gpt-4o)
+- `--models, -m` - Comma-separated model list (auto-detects from available API keys if not specified)
 - `--doc-type, -d` - Document type: prd or tech (default: tech)
 - `--round, -r` - Current round number (default: 1)
 - `--focus, -f` - Focus area for critique

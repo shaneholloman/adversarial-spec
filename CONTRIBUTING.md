@@ -30,7 +30,7 @@ mypy skills/adversarial-spec/scripts/ --ignore-missing-imports
 
 # Tests with coverage
 cd skills/adversarial-spec/scripts
-python -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=75
+python -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=90
 ```
 
 Pre-commit hooks run these automatically on staged files.
@@ -41,7 +41,7 @@ Pre-commit hooks run these automatically on staged files.
 - Google-style docstrings with Args, Returns, Raises sections
 - No silent exception handling (log or re-raise)
 - Input validation for security-sensitive operations
-- Test coverage minimum: 75%
+- Test coverage minimum: 90%
 
 ## Testing
 

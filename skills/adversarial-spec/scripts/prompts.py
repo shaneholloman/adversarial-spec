@@ -1,5 +1,7 @@
 """Prompt templates and system instructions for adversarial spec debate."""
 
+from __future__ import annotations
+
 from typing import Optional
 
 PRESERVE_INTENT_PROMPT = """

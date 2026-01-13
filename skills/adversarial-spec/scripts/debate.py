@@ -41,13 +41,15 @@ Exit codes:
     2 - Missing API key or config error
 """
 
-import os
-import sys
+from __future__ import annotations
+
 import argparse
 import json
+import os
+import sys
 import warnings
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
@@ -62,29 +64,31 @@ except ImportError:
     )
     sys.exit(1)
 
-from prompts import EXPORT_TASKS_PROMPT, get_doc_type_name  # noqa: E402
-from session import SessionState, save_checkpoint, SESSIONS_DIR  # noqa: E402
-from providers import (  # noqa: E402
-    DEFAULT_CODEX_REASONING,
-    load_profile,
-    save_profile,
-    list_profiles,
-    list_providers,
-    list_focus_areas,
-    list_personas,
-    get_bedrock_config,
-    validate_bedrock_models,
-    handle_bedrock_command,
-)
 from models import (  # noqa: E402
     ModelResponse,
-    cost_tracker,
-    load_context_files,
-    extract_tasks,
-    get_critique_summary,
-    generate_diff,
     call_models_parallel,
+    cost_tracker,
+    extract_tasks,
+    generate_diff,
+    get_critique_summary,
+    load_context_files,
 )
+from prompts import EXPORT_TASKS_PROMPT, get_doc_type_name  # noqa: E402
+from providers import (  # noqa: E402
+    DEFAULT_CODEX_REASONING,
+    get_bedrock_config,
+    get_default_model,
+    handle_bedrock_command,
+    list_focus_areas,
+    list_personas,
+    list_profiles,
+    list_providers,
+    load_profile,
+    save_profile,
+    validate_bedrock_models,
+    validate_model_credentials,
+)
+from session import SESSIONS_DIR, SessionState, save_checkpoint  # noqa: E402
 
 
 def send_telegram_notification(
@@ -212,6 +216,143 @@ Final document:
         return False
 
 
+def add_core_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add core critique arguments to parser."""
+    parser.add_argument(
+        "--models",
+        "-m",
+        default=None,
+        help="Comma-separated list of models (e.g., gpt-4o,gemini/gemini-2.0-flash,xai/grok-3)",
+    )
+    parser.add_argument(
+        "--doc-type",
+        "-d",
+        choices=["prd", "tech"],
+        default="tech",
+        help="Document type: prd or tech (default: tech)",
+    )
+    parser.add_argument(
+        "--round", "-r", type=int, default=1, help="Current round number"
+    )
+    parser.add_argument(
+        "--rounds",
+        type=int,
+        default=1,
+        help="Total rounds completed (used with send-final)",
+    )
+
+
+def add_output_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add output formatting arguments to parser."""
+    parser.add_argument("--json", "-j", action="store_true", help="Output as JSON")
+    parser.add_argument(
+        "--show-cost", action="store_true", help="Show cost summary after critique"
+    )
+
+
+def add_telegram_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add Telegram notification arguments to parser."""
+    parser.add_argument(
+        "--telegram",
+        "-t",
+        action="store_true",
+        help="Send Telegram notifications and poll for feedback",
+    )
+    parser.add_argument(
+        "--poll-timeout",
+        type=int,
+        default=60,
+        help="Seconds to wait for Telegram reply (default: 60)",
+    )
+
+
+def add_critique_modifiers(parser: argparse.ArgumentParser) -> None:
+    """Add critique modification arguments to parser."""
+    parser.add_argument(
+        "--press",
+        "-p",
+        action="store_true",
+        help="Press models to confirm they read the full document (anti-laziness check)",
+    )
+    parser.add_argument(
+        "--focus",
+        "-f",
+        help="Focus area for critique (security, scalability, performance, ux, reliability, cost)",
+    )
+    parser.add_argument(
+        "--persona",
+        help="Persona for critique (security-engineer, oncall-engineer, junior-developer, etc.)",
+    )
+    parser.add_argument(
+        "--context",
+        "-c",
+        action="append",
+        default=[],
+        help="Additional context file(s) to include (can be used multiple times)",
+    )
+    parser.add_argument(
+        "--preserve-intent",
+        action="store_true",
+        help="Require explicit justification for any removal or substantial modification",
+    )
+
+
+def add_session_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add session management arguments to parser."""
+    parser.add_argument(
+        "--session",
+        "-s",
+        help="Session ID for state persistence (enables checkpointing and resume)",
+    )
+    parser.add_argument("--resume", help="Resume a previous session by ID")
+
+
+def add_profile_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add profile management arguments to parser."""
+    parser.add_argument("--profile", help="Load settings from a saved profile")
+
+
+def add_diff_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add diff command arguments to parser."""
+    parser.add_argument("--previous", help="Previous spec file (for diff action)")
+    parser.add_argument("--current", help="Current spec file (for diff action)")
+
+
+def add_codex_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add Codex CLI arguments to parser."""
+    parser.add_argument(
+        "--codex-reasoning",
+        default=DEFAULT_CODEX_REASONING,
+        choices=["low", "medium", "high", "xhigh"],
+        help=f"Reasoning effort for Codex CLI models (default: {DEFAULT_CODEX_REASONING})",
+    )
+    parser.add_argument(
+        "--codex-search",
+        action="store_true",
+        help="Enable web search for Codex CLI models",
+    )
+
+
+def add_bedrock_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add Bedrock arguments to parser."""
+    parser.add_argument("--region", help="AWS region for Bedrock (e.g., us-east-1)")
+    parser.add_argument(
+        "bedrock_arg",
+        nargs="?",
+        help="Additional argument for bedrock subcommands (model name or alias target)",
+    )
+
+
+def add_misc_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add miscellaneous arguments to parser."""
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Timeout in seconds for model API/CLI calls (default: 600 = 10 minutes)",
+    )
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure the argument parser.
 
@@ -249,6 +390,8 @@ Document types:
   tech  - Technical Specification / Architecture Document (engineering focus)
         """,
     )
+
+    # Positional arguments
     parser.add_argument(
         "action",
         choices=[
@@ -271,103 +414,19 @@ Document types:
         nargs="?",
         help="Profile name (for save-profile action) or bedrock subcommand",
     )
-    parser.add_argument(
-        "--models",
-        "-m",
-        default="gpt-4o",
-        help="Comma-separated list of models (e.g., gpt-4o,gemini/gemini-2.0-flash,xai/grok-3)",
-    )
-    parser.add_argument(
-        "--doc-type",
-        "-d",
-        choices=["prd", "tech"],
-        default="tech",
-        help="Document type: prd or tech (default: tech)",
-    )
-    parser.add_argument(
-        "--round", "-r", type=int, default=1, help="Current round number"
-    )
-    parser.add_argument("--json", "-j", action="store_true", help="Output as JSON")
-    parser.add_argument(
-        "--telegram",
-        "-t",
-        action="store_true",
-        help="Send Telegram notifications and poll for feedback",
-    )
-    parser.add_argument(
-        "--poll-timeout",
-        type=int,
-        default=60,
-        help="Seconds to wait for Telegram reply (default: 60)",
-    )
-    parser.add_argument(
-        "--rounds",
-        type=int,
-        default=1,
-        help="Total rounds completed (used with send-final)",
-    )
-    parser.add_argument(
-        "--press",
-        "-p",
-        action="store_true",
-        help="Press models to confirm they read the full document (anti-laziness check)",
-    )
-    parser.add_argument(
-        "--focus",
-        "-f",
-        help="Focus area for critique (security, scalability, performance, ux, reliability, cost)",
-    )
-    parser.add_argument(
-        "--persona",
-        help="Persona for critique (security-engineer, oncall-engineer, junior-developer, etc.)",
-    )
-    parser.add_argument(
-        "--context",
-        "-c",
-        action="append",
-        default=[],
-        help="Additional context file(s) to include (can be used multiple times)",
-    )
-    parser.add_argument("--profile", help="Load settings from a saved profile")
-    parser.add_argument("--previous", help="Previous spec file (for diff action)")
-    parser.add_argument("--current", help="Current spec file (for diff action)")
-    parser.add_argument(
-        "--show-cost", action="store_true", help="Show cost summary after critique"
-    )
-    parser.add_argument(
-        "--preserve-intent",
-        action="store_true",
-        help="Require explicit justification for any removal or substantial modification",
-    )
-    parser.add_argument(
-        "--codex-reasoning",
-        default=DEFAULT_CODEX_REASONING,
-        choices=["low", "medium", "high", "xhigh"],
-        help=f"Reasoning effort for Codex CLI models (default: {DEFAULT_CODEX_REASONING})",
-    )
-    parser.add_argument(
-        "--session",
-        "-s",
-        help="Session ID for state persistence (enables checkpointing and resume)",
-    )
-    parser.add_argument("--resume", help="Resume a previous session by ID")
-    parser.add_argument(
-        "--codex-search",
-        action="store_true",
-        help="Enable web search for Codex CLI models",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=600,
-        help="Timeout in seconds for model API/CLI calls (default: 600 = 10 minutes)",
-    )
-    parser.add_argument("--region", help="AWS region for Bedrock (e.g., us-east-1)")
-    parser.add_argument(
-        "bedrock_arg",
-        nargs="?",
-        help="Additional argument for bedrock subcommands (model name or alias target)",
-    )
+
+    # Add argument groups
+    add_core_arguments(parser)
+    add_output_arguments(parser)
+    add_telegram_arguments(parser)
+    add_critique_modifiers(parser)
+    add_session_arguments(parser)
+    add_profile_arguments(parser)
+    add_diff_arguments(parser)
+    add_codex_arguments(parser)
+    add_bedrock_arguments(parser)
+    add_misc_arguments(parser)
+
     return parser
 
 
@@ -475,7 +534,7 @@ def apply_profile(args: argparse.Namespace) -> None:
         return
 
     profile = load_profile(args.profile)
-    if "models" in profile and args.models == "gpt-4o":
+    if "models" in profile and args.models is None:
         args.models = profile["models"]
     if "doc_type" in profile and args.doc_type == "tech":
         args.doc_type = profile["doc_type"]
@@ -498,6 +557,25 @@ def parse_models(args: argparse.Namespace) -> list[str]:
     Returns:
         List of model identifiers.
     """
+    # If no models specified, use default based on available API keys
+    if args.models is None:
+        default_model = get_default_model()
+        if default_model is None:
+            print("Error: No API keys configured and no models specified.", file=sys.stderr)
+            print("\nAvailable providers:", file=sys.stderr)
+            print("  OpenAI:    Set OPENAI_API_KEY for gpt-4o, o1, etc.", file=sys.stderr)
+            print("  Anthropic: Set ANTHROPIC_API_KEY for claude-sonnet-4-20250514, etc.", file=sys.stderr)
+            print("  Google:    Set GEMINI_API_KEY for gemini/gemini-2.0-flash, etc.", file=sys.stderr)
+            print("  xAI:       Set XAI_API_KEY for xai/grok-3, etc.", file=sys.stderr)
+            print("  Mistral:   Set MISTRAL_API_KEY for mistral/mistral-large, etc.", file=sys.stderr)
+            print("  Groq:      Set GROQ_API_KEY for groq/llama-3.3-70b-versatile, etc.", file=sys.stderr)
+            print("  Deepseek:  Set DEEPSEEK_API_KEY for deepseek/deepseek-chat, etc.", file=sys.stderr)
+            print("  Zhipu:     Set ZHIPUAI_API_KEY for zhipu/glm-4, etc.", file=sys.stderr)
+            print("\nOr specify models explicitly: --models gpt-4o", file=sys.stderr)
+            print("\nRun 'python3 debate.py providers' to see which keys are set.", file=sys.stderr)
+            sys.exit(2)
+        args.models = default_model
+
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     if not models:
         print("Error: No models specified", file=sys.stderr)
@@ -861,6 +939,49 @@ def output_results(
             print(cost_tracker.summary())
 
 
+def validate_models_before_run(models: list[str], bedrock_mode: bool) -> None:
+    """
+    Validate that models have required credentials before running critique.
+
+    Args:
+        models: List of model identifiers.
+        bedrock_mode: Whether Bedrock mode is enabled.
+    """
+    if bedrock_mode:
+        # Bedrock validation is handled in setup_bedrock
+        return
+
+    valid, invalid = validate_model_credentials(models)
+
+    if invalid:
+        print("Error: The following models lack required API keys:", file=sys.stderr)
+        for model in invalid:
+            # Determine which key is needed
+            if model.startswith("gpt-") or model.startswith("o1"):
+                print(f"  - {model} (requires OPENAI_API_KEY)", file=sys.stderr)
+            elif model.startswith("claude-"):
+                print(f"  - {model} (requires ANTHROPIC_API_KEY)", file=sys.stderr)
+            elif model.startswith("gemini/"):
+                print(f"  - {model} (requires GEMINI_API_KEY)", file=sys.stderr)
+            elif model.startswith("xai/"):
+                print(f"  - {model} (requires XAI_API_KEY)", file=sys.stderr)
+            elif model.startswith("mistral/"):
+                print(f"  - {model} (requires MISTRAL_API_KEY)", file=sys.stderr)
+            elif model.startswith("groq/"):
+                print(f"  - {model} (requires GROQ_API_KEY)", file=sys.stderr)
+            elif model.startswith("deepseek/"):
+                print(f"  - {model} (requires DEEPSEEK_API_KEY)", file=sys.stderr)
+            elif model.startswith("zhipu/"):
+                print(f"  - {model} (requires ZHIPUAI_API_KEY)", file=sys.stderr)
+            elif model.startswith("codex/"):
+                print(f"  - {model} (requires Codex CLI: npm install -g @openai/codex && codex login)", file=sys.stderr)
+            else:
+                print(f"  - {model} (unknown provider)", file=sys.stderr)
+
+        print("\nRun 'python3 debate.py providers' to see which API keys are configured.", file=sys.stderr)
+        sys.exit(2)
+
+
 def main() -> None:
     """Entry point for the debate CLI."""
     parser = create_parser()
@@ -876,6 +997,9 @@ def main() -> None:
     models = parse_models(args)
     context = load_context_files(args.context) if args.context else None
     models, bedrock_mode, bedrock_region = setup_bedrock(args, models)
+
+    # Validate models have required credentials
+    validate_models_before_run(models, bedrock_mode)
 
     if args.action == "send-final":
         handle_send_final(args, models)

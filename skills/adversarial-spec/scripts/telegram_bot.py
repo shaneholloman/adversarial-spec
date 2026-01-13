@@ -17,15 +17,17 @@ Exit codes:
     2 - Missing configuration
 """
 
+from __future__ import annotations
+
+import argparse
+import json
 import os
 import sys
-import json
 import time
-import argparse
 from typing import Any, Optional
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 TELEGRAM_API: str = "https://api.telegram.org/bot{token}/{method}"
 MAX_MESSAGE_LENGTH: int = 4096
