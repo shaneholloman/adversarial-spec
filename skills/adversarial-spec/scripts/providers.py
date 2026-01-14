@@ -318,7 +318,9 @@ def list_providers():
     # Gemini CLI (uses Google account, not API key)
     gemini_cli_status = "[installed]" if GEMINI_CLI_AVAILABLE else "[not installed]"
     print(f"  {'Gemini CLI':12} {'(Google account)':24} {gemini_cli_status}")
-    print("             Example models: gemini-cli/gemini-3-pro-preview, gemini-cli/gemini-3-flash-preview")
+    print(
+        "             Example models: gemini-cli/gemini-3-pro-preview, gemini-cli/gemini-3-flash-preview"
+    )
     print("             Install: npm install -g @google/gemini-cli && gemini auth")
     print()
 

@@ -37,9 +37,9 @@ from prompts import (
 )
 from providers import (
     CODEX_AVAILABLE,
-    GEMINI_CLI_AVAILABLE,
     DEFAULT_CODEX_REASONING,
     DEFAULT_COST,
+    GEMINI_CLI_AVAILABLE,
     MODEL_COSTS,
 )
 
@@ -408,32 +408,34 @@ USER REQUEST:
 
     try:
         # Use gemini CLI with the prompt passed via stdin and -p flag
-        cmd = ["gemini", "-m", actual_model, "-y"]  # -y for auto-approve (no tool calls expected)
+        cmd = [
+            "gemini",
+            "-m",
+            actual_model,
+            "-y",
+        ]  # -y for auto-approve (no tool calls expected)
 
         result = subprocess.run(
-            cmd,
-            input=full_prompt,
-            capture_output=True,
-            text=True,
-            timeout=timeout
+            cmd, input=full_prompt, capture_output=True, text=True, timeout=timeout
         )
 
         if result.returncode != 0:
             error_msg = (
-                result.stderr.strip() or f"Gemini CLI exited with code {result.returncode}"
+                result.stderr.strip()
+                or f"Gemini CLI exited with code {result.returncode}"
             )
             raise RuntimeError(f"Gemini CLI failed: {error_msg}")
 
         response_text = result.stdout.strip()
 
         # Filter out noise lines from gemini CLI output
-        lines = response_text.split('\n')
+        lines = response_text.split("\n")
         filtered_lines = []
-        skip_prefixes = ('Loaded cached', 'Server ', 'Loading extension')
+        skip_prefixes = ("Loaded cached", "Server ", "Loading extension")
         for line in lines:
             if not any(line.startswith(prefix) for prefix in skip_prefixes):
                 filtered_lines.append(line)
-        response_text = '\n'.join(filtered_lines).strip()
+        response_text = "\n".join(filtered_lines).strip()
 
         if not response_text:
             raise RuntimeError("No response from Gemini CLI")

@@ -702,9 +702,7 @@ class TestCallGeminiCliModel:
             stdout="Test response from Gemini",
             stderr="",
         )
-        response, inp, out = call_gemini_cli_model(
-            "sys", "user", "gemini-cli/model"
-        )
+        response, inp, out = call_gemini_cli_model("sys", "user", "gemini-cli/model")
         assert response == "Test response from Gemini"
 
     @patch("models.GEMINI_CLI_AVAILABLE", True)
@@ -715,9 +713,7 @@ class TestCallGeminiCliModel:
             stdout="Loaded cached credentials.\nServer 'context7' supports...\nLoading extension: foo\nActual response",
             stderr="",
         )
-        response, inp, out = call_gemini_cli_model(
-            "sys", "user", "gemini-cli/model"
-        )
+        response, inp, out = call_gemini_cli_model("sys", "user", "gemini-cli/model")
         assert "Loaded cached" not in response
         assert "Server " not in response
         assert "Loading extension" not in response
